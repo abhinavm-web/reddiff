@@ -82,6 +82,52 @@ impl HeuristicSynthesizer {
             return Some(cand);
         }
 
+        // Pattern 4: Division-by-zero guard removal
+        if let Some(cand) = self.check_zero_division_guard(path, ext, fn_info, del_line, add_line) {
+            return Some(cand);
+        }
+
+        None
+    }
+
+    fn check_zero_division_guard(
+        &self,
+        path: &Path,
+        ext: &str,
+        fn_info: &Option<FunctionInfo>,
+        del_line: &str,
+        add_line: &str,
+    ) -> Option<CandidateTest> {
+        let fn_name = fn_info.as_ref().map(|f| f.name.as_str()).unwrap_or("target_func");
+        let param_count = fn_info.as_ref().map(|f| f.params.len()).unwrap_or(2);
+        if add_line.contains('/')
+            && (del_line.contains("!= 0") || del_line.contains("== 0") || del_line.contains("or 1") || del_line.contains("max("))
+            && !add_line.contains("!= 0")
+            && !add_line.contains("== 0")
+        {
+            let args: Vec<&str> = if param_count <= 1 {
+                vec!["0"]
+            } else {
+                vec!["10", "0"]
+            };
+            let module_stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("module");
+            let args_str = args.join(", ");
+            let code = format!(
+                "import sys\n\
+                 import os\n\
+                 sys.path.insert(0, os.path.abspath('.'))\n\
+                 from {module_stem} import {fn_name}\n\
+                 \n\
+                 _ = {fn_name}({args_str})\n"
+            );
+            return Some(CandidateTest {
+                name: "zero_division_guard_removed".to_string(),
+                script: code,
+                file_extension: if ext.is_empty() { "py".to_string() } else { ext.to_string() },
+                runner: Some("python".to_string()),
+                timeout_secs: Some(10),
+            });
+        }
         None
     }
 

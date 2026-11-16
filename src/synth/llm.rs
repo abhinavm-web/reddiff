@@ -20,17 +20,41 @@ impl Default for LlmSynthesizer {
 
 impl LlmSynthesizer {
     pub fn new() -> Self {
-        let api_key = std::env::var("OPENAI_API_KEY").ok();
-        let base_url = std::env::var("OPENAI_BASE_URL")
-            .unwrap_or_else(|_| "https://api.openai.com/v1".to_string());
-        let model = std::env::var("OPENAI_MODEL")
-            .unwrap_or_else(|_| "gpt-4o-mini".to_string());
+        let api_key = std::env::var("REDDIFF_API_KEY")
+            .or_else(|_| std::env::var("OPENAI_API_KEY"))
+            .or_else(|_| std::env::var("ANTHROPIC_API_KEY"))
+            .ok();
+        let is_anthropic_only = std::env::var("REDDIFF_API_KEY").is_err()
+            && std::env::var("OPENAI_API_KEY").is_err()
+            && std::env::var("ANTHROPIC_API_KEY").is_ok();
+        let base_url = std::env::var("REDDIFF_BASE_URL")
+            .or_else(|_| std::env::var("OPENAI_BASE_URL"))
+            .unwrap_or_else(|_| {
+                if is_anthropic_only {
+                    "https://api.anthropic.com/v1".to_string()
+                } else {
+                    "https://api.openai.com/v1".to_string()
+                }
+            });
+        let model = std::env::var("REDDIFF_MODEL")
+            .or_else(|_| std::env::var("OPENAI_MODEL"))
+            .unwrap_or_else(|_| {
+                if is_anthropic_only {
+                    "claude-3-5-sonnet-20241022".to_string()
+                } else {
+                    "gpt-4o-mini".to_string()
+                }
+            });
 
         Self {
             api_key,
             base_url,
             model,
         }
+    }
+
+    pub fn has_credentials(&self) -> bool {
+        self.api_key.is_some()
     }
 
     pub fn with_config(api_key: String, base_url: String, model: String) -> Self {
@@ -71,22 +95,41 @@ impl Synthesizer for LlmSynthesizer {
         }
 
         let user_prompt = construct_user_prompt(&diff_repr);
-        let endpoint = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
+        let is_anthropic = self.base_url.contains("anthropic.com");
 
-        let payload = json!({
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt}
-            ],
-            "temperature": 0.1
-        });
-
-        let response = ureq::post(&endpoint)
-            .set("Authorization", &format!("Bearer {api_key}"))
-            .set("Content-Type", "application/json")
-            .send_json(payload)
-            .map_err(|e| ReddiffError::Llm(format!("HTTP request failed: {e}")))?;
+        let response = if is_anthropic {
+            let endpoint = format!("{}/messages", self.base_url.trim_end_matches('/'));
+            let payload = json!({
+                "model": self.model,
+                "max_tokens": 1024,
+                "system": SYSTEM_PROMPT,
+                "messages": [
+                    {"role": "user", "content": user_prompt}
+                ],
+                "temperature": 0.1
+            });
+            ureq::post(&endpoint)
+                .set("x-api-key", api_key)
+                .set("anthropic-version", "2023-06-01")
+                .set("Content-Type", "application/json")
+                .send_json(payload)
+                .map_err(|e| ReddiffError::Llm(format!("HTTP request failed: {e}")))?
+        } else {
+            let endpoint = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
+            let payload = json!({
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "temperature": 0.1
+            });
+            ureq::post(&endpoint)
+                .set("Authorization", &format!("Bearer {api_key}"))
+                .set("Content-Type", "application/json")
+                .send_json(payload)
+                .map_err(|e| ReddiffError::Llm(format!("HTTP request failed: {e}")))?
+        };
 
         let body_str = response
             .into_string()
@@ -95,6 +138,7 @@ impl Synthesizer for LlmSynthesizer {
         let res_json: serde_json::Value = serde_json::from_str(&body_str)?;
         let content = res_json["choices"][0]["message"]["content"]
             .as_str()
+            .or_else(|| res_json["content"][0]["text"].as_str())
             .ok_or_else(|| ReddiffError::Llm("Missing content in LLM response".to_string()))?;
 
         let candidates = extract_candidate_tests(content);

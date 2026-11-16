@@ -54,6 +54,21 @@ pub fn run(opts: &RunOptions, repo_dir: &Path) -> Result<Option<PathBuf>, Reddif
     }
 
     match opts.synthesizer {
+        SynthesizerType::Auto => {
+            let llm = LlmSynthesizer::new();
+            let heuristic = HeuristicSynthesizer::new();
+            let mut combined = Vec::new();
+            if llm.has_credentials() {
+                if let Ok(cands) = llm.synthesize(&diff_summary) {
+                    combined.extend(cands);
+                }
+            }
+            if let Ok(cands) = heuristic.synthesize(&diff_summary) {
+                combined.extend(cands);
+            }
+            let merged = MockSynthesizer::new(combined);
+            run_with_synthesizer(opts, &repo_root, &base_sha, &diff_summary, &merged)
+        }
         SynthesizerType::Heuristic => {
             let synth = HeuristicSynthesizer::new();
             run_with_synthesizer(opts, &repo_root, &base_sha, &diff_summary, &synth)

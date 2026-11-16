@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "lowercase")]
 pub enum SynthesizerType {
     #[default]
+    Auto,
     Heuristic,
     Mock,
     Llm,
@@ -70,6 +71,6 @@ pub struct RunOptions {
     pub out: Option<PathBuf>,
 
     /// Synthesis backend to generate candidate tests
-    #[arg(short = 's', long, value_enum, default_value = "heuristic")]
+    #[arg(short = 's', long, value_enum, default_value = "auto")]
     pub synthesizer: SynthesizerType,
 }
