@@ -2,6 +2,7 @@
 
 **Adversarial diff breaker with one rule: No review comment without a runnable crash PoC.**
 
+[![CI](https://github.com/abhinavm-web/reddiff/actions/workflows/ci.yml/badge.svg)](https://github.com/abhinavm-web/reddiff/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-2021-orange.svg)](Cargo.toml)
 
@@ -46,11 +47,16 @@ Existing AI pull-request reviewers flood diffs with speculative prose comments (
    - Minimizes the failing script via line-delta shrinking while preserving the differential pass/fail invariant, writes the runnable PoC to disk, and exits with code `1`.
    - Any other outcome (both pass, both fail, or timeout) -> **Discarded silently**.
 
-## Installation
+## Installation & 30-Second Showcase
 
 ```bash
 git clone https://github.com/abhinavm-web/reddiff.git
 cd reddiff
+
+# Run the self-contained adversarial diff -> runnable PoC synthesis showcase
+cargo run --example showcase
+
+# Or install the CLI binary globally
 cargo install --path .
 ```
 
