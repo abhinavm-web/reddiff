@@ -26,12 +26,15 @@ fn main() {
     };
 
     let opts = cli.effective_opts();
-    let current_dir = match std::env::current_dir() {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("error: failed to get current working directory: {e}");
-            std::process::exit(2);
-        }
+    let current_dir = match &opts.repo {
+        Some(dir) => dir.clone(),
+        None => match std::env::current_dir() {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("error: failed to get current working directory: {e}");
+                std::process::exit(2);
+            }
+        },
     };
 
     let repo_root = match reddiff::diff::GitClient::toplevel(&current_dir) {

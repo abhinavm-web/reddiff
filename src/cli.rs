@@ -45,6 +45,10 @@ pub enum Commands {
 
 #[derive(Args, Debug, Clone)]
 pub struct RunOptions {
+    /// Repository directory to inspect (defaults to current working directory)
+    #[arg(short = 'C', long = "repo")]
+    pub repo: Option<PathBuf>,
+
     /// Base git reference representing baseline invariant (e.g. main, HEAD~1)
     #[arg(short = 'b', long)]
     pub base: Option<String>,

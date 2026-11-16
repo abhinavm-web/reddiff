@@ -217,6 +217,7 @@ fn test_mock_synthesizer_decision_matrix() -> Result<(), Box<dyn std::error::Err
     let summary = reddiff::diff::parse_unified_diff(&raw_diff)?;
 
     let opts = RunOptions {
+        repo: None,
         base: Some("main".to_string()),
         target: "working-tree".to_string(),
         runner: Some("python".to_string()),
