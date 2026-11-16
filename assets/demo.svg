@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 410" width="100%" height="100%">
+  <defs>
+    <style>
+      .bg { fill: #0d1117; stroke: #30363d; stroke-width: 1.5; }
+      .header { fill: #161b22; }
+      .title { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 12px; fill: #8b949e; text-anchor: middle; }
+      .code { font-family: "JetBrains Mono", "Fira Code", Consolas, "Courier New", monospace; font-size: 13px; fill: #c9d1d9; }
+      .prompt { fill: #58a6ff; font-weight: bold; }
+      .cmd { fill: #f0f6fc; font-weight: bold; }
+      .ok { fill: #3fb950; font-weight: bold; }
+      .cyan { fill: #79c0ff; }
+      .yellow { fill: #d29922; }
+      .red { fill: #f85149; font-weight: bold; }
+      .muted { fill: #8b949e; }
+    </style>
+  </defs>
+  <rect class="bg" x="1" y="1" width="878" height="408" rx="10" ry="10"/>
+  <path class="header" d="M 1 11 Q 1 1 11 1 L 869 1 Q 879 1 879 11 L 879 36 L 1 36 Z"/>
+  <line x1="1" y1="36" x2="879" y2="36" stroke="#30363d" stroke-width="1"/>
+  <circle cx="20" cy="18" r="6" fill="#ff5f56"/>
+  <circle cx="40" cy="18" r="6" fill="#ffbd2e"/>
+  <circle cx="60" cy="18" r="6" fill="#27c93f"/>
+  <text class="title" x="440" y="22">reddiff — Adversarial Diff Breaker (Runnable Crash PoC or Silence)</text>
+
+  <text class="code" x="24" y="66"><tspan class="muted"># 1. On a safe diff: zero prose, 0 bytes on stdout, exit code 0</tspan></text>
+  <text class="code" x="24" y="86"><tspan class="prompt">$</tspan> <tspan class="cmd">reddiff check --base main</tspan> &amp;&amp; echo "exit: $?" </text>
+  <text class="code" x="24" y="106"><tspan class="ok">exit: 0</tspan></text>
+
+  <text class="code" x="24" y="140"><tspan class="muted"># 2. Agent introduces subtle boundary &amp; zero-division regression in quota.py</tspan></text>
+  <text class="code" x="24" y="160"><tspan class="prompt">$</tspan> <tspan class="cmd">git diff quota.py</tspan></text>
+  <text class="code" x="24" y="180"> def can_withdraw(balance):</text>
+  <text class="code" x="24" y="198"><tspan class="red">-    return balance &gt;= 100</tspan></text>
+  <text class="code" x="24" y="216"><tspan class="ok">+    return balance &gt; 100</tspan></text>
+
+  <text class="code" x="24" y="250"><tspan class="muted"># 3. reddiff synthesizes candidate tests, verifies PASS on main &amp; FAIL on working-tree, and shrinks PoC</tspan></text>
+  <text class="code" x="24" y="270"><tspan class="prompt">$</tspan> <tspan class="cmd">reddiff check --base main</tspan> ; echo "exit: $?"</text>
+  <text class="code" x="24" y="290"><tspan class="cyan">.reddiff/reproducer.py</tspan></text>
+  <text class="code" x="24" y="308"><tspan class="red">exit: 1</tspan></text>
+
+  <text class="code" x="24" y="340"><tspan class="prompt">$</tspan> <tspan class="cmd">cat .reddiff/reproducer.py</tspan></text>
+  <text class="code" x="24" y="360">import sys, os; sys.path.insert(0, os.path.abspath('.'))</text>
+  <text class="code" x="24" y="378">from quota import can_withdraw</text>
+  <text class="code" x="24" y="396"><tspan class="yellow">assert can_withdraw(100) == True</tspan>  <tspan class="muted"># Passes on main, AssertionError on working-tree</tspan></text>
+</svg>
