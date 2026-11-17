@@ -1,6 +1,6 @@
 [package]
 name = "reddiff"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Abhinav Mahajan <abhinavmahajan91@gmail.com>"]
 description = "Adversarial diff breaker with zero prose review comments"

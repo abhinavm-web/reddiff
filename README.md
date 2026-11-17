@@ -1,6 +1,6 @@
 # reddiff
 
-**Adversarial diff breaker with one rule: No review comment without a runnable crash PoC.**
+Differential diff breaker that emits zero prose review comments and outputs only verified runnable regression reproducers.
 
 [![CI](https://github.com/abhinavm-web/reddiff/actions/workflows/ci.yml/badge.svg)](https://github.com/abhinavm-web/reddiff/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/abhinavm-web/reddiff)](https://github.com/abhinavm-web/reddiff/releases)
@@ -11,28 +11,22 @@
   <img src="assets/demo.svg" width="860" alt="reddiff terminal demo">
 </p>
 
----
-
 ## Overview
 
-Generating 2,000 lines of code with an AI takes 30 seconds; proving it doesn't introduce subtle regressions, off-by-one boundaries, division-by-zero panics, or broken state invariants takes hours.
+Automated PR review bots often produce speculative prose comments with high false-positive rates. `reddiff` enforces a binary output contract:
 
-Existing AI pull-request reviewers flood diffs with speculative prose comments (*"Consider checking if `x` could be null"*), false positives, and style nitpicks. Asking the same coding agent to write unit tests rarely catches the bug either—it writes happy-path tests that mirror the implementation's assumptions.
-
-`reddiff` enforces a single design constraint:
-
-> **Silence unless proven broken.** `reddiff` never outputs prose review comments. It only emits output when it synthesizes and verifies an executable reproducer script that **passes on the base git ref (`main` / `HEAD~1`)** and **fails on the target tree (`working-tree` / `HEAD`)**.
+`reddiff` writes nothing to `stdout` (`exit 0`) unless it synthesizes and verifies an executable test script that **passes twice consecutively on the base git ref (`main` / `HEAD~1`)** and **fails twice consecutively on the target tree (`working-tree` / `HEAD`)**.
 
 ```text
   git diff (Base vs Target)
          |
          v
   +------------------------------------------+
-  |         reddiff Adversarial Engine       |
-  |  1. Parse unified diff & changed hunks   |
+  |         reddiff Verification Loop        |
+  |  1. Parse unified diff and changed hunks |
   |  2. Materialize isolated git worktrees   |
-  |  3. Synthesize adversarial test harness  |
-  |  4. Differential verification + shrink   |
+  |  3. Synthesize candidate test harnesses  |
+  |  4. 2x Base PASS + 2x Target FAIL + shrink|
   +------------------+-----------------------+
                      |
           +----------+----------+
@@ -45,19 +39,16 @@ Existing AI pull-request reviewers flood diffs with speculative prose comments (
 ## How It Works
 
 1. **Unified Diff Inspection**: Extracts modified files, added/removed lines, and hunk coordinates between `--base` (e.g., `main` or `HEAD~1`) and `--target` (`working-tree` or a commit/branch).
-2. **Isolated Dual-Worktree Sandbox**: Materializes temporary isolated worktrees for both the baseline tree and the target tree so test execution never mutates your working directory.
-3. **Adversarial Candidate Synthesis**: Uses heuristic boundary/invariant analyzers, deterministic test harnesses, or an LLM endpoint (`--synthesizer llm`) to generate standalone reproduction scripts targeting the changed code paths.
-4. **Differential Gate & Shrinking**: Executes each candidate against both trees with a strict timeout:
-   - Base passes (`exit 0`) + Target fails (`exit != 0`) -> **Confirmed Regression**.
-   - Minimizes the failing script via line-delta shrinking while preserving the differential pass/fail invariant, writes the runnable PoC to disk, and exits with code `1`.
-   - Any other outcome (both pass, both fail, or timeout) -> **Discarded silently**.
+2. **Isolated Dual-Worktree Execution**: Materializes temporary isolated git worktrees for the baseline and target trees. Child runners execute in a scrubbed environment (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `REDDIFF_API_KEY`, `GITHUB_TOKEN`, `AWS_*` stripped; `TZ=UTC`, `PYTHONHASHSEED=0`, isolated `HOME`/`TMPDIR`).
+3. **Adversarial Candidate Synthesis**: Defaults to `auto`, which combines LLM-synthesized test candidates (when API keys are set) with offline heuristic detectors (boundary comparisons, zero-division guard removals, boolean flips, arithmetic mutations).
+4. **2-Run Determinism Gate and Shrinking**: Candidates must pass 2 consecutive runs on Base (`exit 0`) and fail 2 consecutive runs on Target (`exit != 0`). Confirmed regressions are line-delta minimized, written to disk, and reported via file path on `stdout` (`exit 1`).
 
-## Installation & 30-Second Showcase
+## Installation
 
-Install prebuilt binaries with one command, download directly from [GitHub Releases](https://github.com/abhinavm-web/reddiff/releases/latest), or build from source:
+Install prebuilt binaries, download an archive from [GitHub Releases](https://github.com/abhinavm-web/reddiff/releases/latest), or build from source:
 
 ```bash
-# macOS (Apple Silicon) & Linux (x86_64)
+# macOS (Apple Silicon) and Linux (x86_64)
 curl -fsSL https://raw.githubusercontent.com/abhinavm-web/reddiff/main/install.sh | sh
 ```
 
@@ -66,106 +57,94 @@ curl -fsSL https://raw.githubusercontent.com/abhinavm-web/reddiff/main/install.s
 irm https://raw.githubusercontent.com/abhinavm-web/reddiff/main/install.ps1 | iex
 ```
 
-Or run from source:
+From source:
 
 ```bash
 git clone https://github.com/abhinavm-web/reddiff.git
 cd reddiff
-
-# Run the self-contained adversarial diff -> runnable PoC synthesis showcase
 cargo run --example showcase
-
-# Or install the CLI binary globally
 cargo install --path .
 ```
 
 ## Usage
 
-### 1. Check uncommitted changes against `HEAD` or `main`
+### Inspect uncommitted changes or branch diffs
 
 ```bash
-# Inspect working tree changes against HEAD; silent (exit 0) if no runnable PoC breaks
+# Check working tree against HEAD (exits 0 silently if no regression is proven)
 reddiff check
 
-# Compare current branch against main and write any verified reproducer to .reddiff/poc.sh
-reddiff check --base main --target working-tree --out .reddiff/poc.sh
+# Compare against main and write verified reproducer to .reddiff/poc.py
+reddiff check --base main --target working-tree --out .reddiff/poc.py
 ```
 
-### 2. Specify a language runner or synthesis backend
+### Specify repository, runner, or synthesis backend
 
 ```bash
-# Use Python pytest/python3 as the test runner with a 15-second timeout per candidate
-reddiff check --base HEAD~1 --runner "python3" --timeout 15
-
-# Use LLM-backed adversarial synthesis (reads REDDIFF_API_KEY / OPENAI_API_KEY)
+reddiff check -C /path/to/repo --base HEAD~1 --runner "python3" --timeout 15
 reddiff check --base main --synthesizer llm --out reproducer.py
 ```
 
-### Exit Codes & Output Contract
+### Exit codes and output contract
 
 | Outcome | Exit Code | `stdout` |
 | :--- | :--- | :--- |
 | Clean diff or no verified PoC | `0` | Empty (`0 bytes`) |
-| Verified regression PoC (passes on base, fails on target) | `1` | Reproducer file path / script only (zero prose commentary) |
-| Git / execution error | `2` | Error diagnostic on `stderr` |
+| Verified regression PoC (2x Base PASS, 2x Target FAIL) | `1` | Reproducer file path only |
+| Git or operational error | `2` | Error diagnostic on `stderr` |
 
-## Architecture
+## Benchmarks
 
-```text
-src/
-├── cli.rs              # Clap CLI flags (check, --base, --target, --runner, --out, --synthesizer)
-├── error.rs            # Typed error definitions (ReddiffError)
-├── diff/
-│   ├── git.rs          # Git diff extraction between refs and working tree
-│   └── parser.rs       # Unified diff parser (FileDiff, DiffHunk, LineChange)
-├── sandbox/
-│   ├── worktree.rs     # Ephemeral git worktree / tree materialization
-│   └── runner.rs       # Timeout-enforced subprocess execution harness
-├── synth/
-│   ├── heuristic.rs    # Boundary, division, panics, and invariant candidate generator
-│   ├── llm.rs          # OpenAI-compatible adversarial script synthesizer
-│   ├── prompt.rs       # Diff-to-reproducer prompt builder
-│   └── mock.rs         # Deterministic synthesizer for integration test verification
-└── verifier/
-    ├── mod.rs          # Base-PASS / Target-FAIL differential gatekeeper
-    └── shrinker.rs     # Delta-debugging script minimizer
-```
-
-## Verification Accuracy & Sandbox Security
-
-Reproduce on your machine:
+Reproduce locally:
 
 ```bash
 cargo run --release --example benchmark
 ```
 
-**Trust & Execution Guarantees:**
-- **2-Run Flake Elimination Gate**: Every candidate script must pass **2 consecutive runs** on the baseline tree and fail **2 consecutive runs** on the target tree before a reproducer is accepted.
-- **Credential-Scrubbed Restricted Environment**: Generated reproducers run inside ephemeral git worktrees with deterministic `TZ=UTC` / `PYTHONHASHSEED=0`, isolated `HOME`/`TMPDIR`, and host secret variables (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GITHUB_TOKEN`, `AWS_*`) stripped from the child process environment.
-
 | Benchmark Check | Measured Result |
 | :--- | :--- |
-| Historical-style regressions caught (boundary, zero-div, bool, arithmetic) | **4 / 4 (100% recall)** |
-| Clean refactoring diffs (`0 bytes stdout`, exit `0`) | **0 / 2 false positives (0.0%)** |
-| Simulated flaky test rejection (2-run determinism gate) | **100% rejected** |
-| Host credential isolation (`OPENAI_API_KEY` scrubbed) | **Verified** |
+| Regression cases caught (boundary, zero-div, bool flip, arithmetic) | 4 / 4 (100% recall) |
+| Clean refactoring diffs (`0 bytes stdout`, exit `0`) | 0 / 2 false positives (0.0%) |
+| Simulated flaky test rejection (2-run determinism gate) | 100% rejected |
+| Host credential isolation (`OPENAI_API_KEY` scrubbed) | Verified |
 
-## Development & Verification
+## Architecture
+
+```text
+src/
+├── cli.rs              # Clap CLI flags (check, -C/--repo, --base, --target, --runner, --out, --synthesizer)
+├── error.rs            # Typed error definitions (ReddiffError)
+├── diff/
+│   ├── git.rs          # Git diff extraction between refs and working tree
+│   └── parser.rs       # Unified diff parser (FileDiff, DiffHunk, LineChange)
+├── sandbox/
+│   ├── worktree.rs     # Ephemeral git worktree materialization
+│   └── runner.rs       # Timeout-enforced, env-scrubbed subprocess execution harness
+├── synth/
+│   ├── heuristic.rs    # Boundary, zero-division, boolean, and arithmetic candidate generator
+│   ├── llm.rs          # OpenAI/Anthropic-compatible adversarial script synthesizer
+│   ├── prompt.rs       # Diff-to-reproducer prompt builder
+│   └── mock.rs         # Deterministic synthesizer for integration test verification
+└── verifier/
+    ├── mod.rs          # 2-run Base-PASS / Target-FAIL differential gatekeeper
+    └── shrinker.rs     # Delta-debugging script minimizer
+```
+
+## Development
 
 ```bash
 cargo test
 cargo clippy --all-targets -- -D warnings
 ```
 
-## Related Tools (Agent Systems Toolkit)
+## See Also
 
-| Repository | Focus |
+| Repository | Description |
 | :--- | :--- |
-| **[reddiff](https://github.com/abhinavm-web/reddiff)** | Zero-prose adversarial diff breaker: runnable crash PoC or silence |
-| **[agent-fork](https://github.com/abhinavm-web/agent-fork)** | OS-level Copy-on-Write time-travel debugger & parallel trajectory forker for coding agents |
-| **[ctx-firewall](https://github.com/abhinavm-web/ctx-firewall)** | Active LLM context proxy & Ratatui flamegraph profiler that prunes context rot without breaking KV-cache |
-| **[diffmem](https://github.com/abhinavm-web/diffmem)** | Zero-touch "Diff-of-Diffs" episodic failure memory across Claude Code, Cursor, and AGENTS.md |
-| **[jitpipe](https://github.com/abhinavm-web/jitpipe)** | JIT-compiled semantic Unix pipes (`sgrep`, `sawk`, `sjq`) streaming at native Rust speed |
+| **[agent-fork](https://github.com/abhinavm-web/agent-fork)** | Workspace checkpointing, rewind, parallel worktrees, and cassette recording |
+| **[ctx-firewall](https://github.com/abhinavm-web/ctx-firewall)** | Active LLM context proxy and terminal profiler with KV-cache prefix pinning |
+| **[diffmem](https://github.com/abhinavm-web/diffmem)** | Git diff-of-diffs episodic memory daemon and editor rule sync |
+| **[jitpipe](https://github.com/abhinavm-web/jitpipe)** | Sample-driven compiled Unix pipes (`sgrep`, `sawk`, `sjq`) |
 
 ## License
 
