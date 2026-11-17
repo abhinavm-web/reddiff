@@ -50,37 +50,51 @@ impl DifferentialVerifier {
                 .map(Duration::from_secs)
                 .unwrap_or(self.timeout);
 
-            // Step 1: Base Tree Verification (Must PASS)
+            // Step 1: Multi-run determinism check on Base Tree (2 consecutive runs must PASS)
             let temp_filename = format!("_rd_eval_{}.{}", std::process::id(), candidate.file_extension);
             let base_file = self.base_dir.join(&temp_filename);
 
-            std::fs::write(&base_file, &candidate.script)?;
-            let base_result = ProcessRunner::run_script(&runner, &base_file, &self.base_dir, timeout);
-            let _ = std::fs::remove_file(&base_file);
+            let mut base_stable = true;
+            for _ in 0..2 {
+                std::fs::write(&base_file, &candidate.script)?;
+                let base_result = ProcessRunner::run_script(&runner, &base_file, &self.base_dir, timeout);
+                let _ = std::fs::remove_file(&base_file);
 
-            let base_output = base_result?;
-            if !base_output.success() {
-                debug!(
-                    name = %candidate.name,
-                    exit_code = ?base_output.exit_code,
-                    timed_out = base_output.timed_out,
-                    "Candidate failed on base tree; discarding"
-                );
+                let base_output = base_result?;
+                if !base_output.success() {
+                    debug!(
+                        name = %candidate.name,
+                        exit_code = ?base_output.exit_code,
+                        timed_out = base_output.timed_out,
+                        "Candidate failed determinism check on base tree; discarding"
+                    );
+                    base_stable = false;
+                    break;
+                }
+            }
+            if !base_stable {
                 continue;
             }
 
-            // Step 2: Target Tree Verification (Must FAIL)
+            // Step 2: Multi-run determinism check on Target Tree (2 consecutive runs must FAIL)
             let target_file = self.target_dir.join(&temp_filename);
-            std::fs::write(&target_file, &candidate.script)?;
-            let target_result = ProcessRunner::run_script(&runner, &target_file, &self.target_dir, timeout);
-            let _ = std::fs::remove_file(&target_file);
+            let mut target_consistently_fails = true;
+            for _ in 0..2 {
+                std::fs::write(&target_file, &candidate.script)?;
+                let target_result = ProcessRunner::run_script(&runner, &target_file, &self.target_dir, timeout);
+                let _ = std::fs::remove_file(&target_file);
 
-            let target_output = target_result?;
-            if target_output.success() {
-                debug!(
-                    name = %candidate.name,
-                    "Candidate passed on target tree; no regression demonstrated; discarding"
-                );
+                let target_output = target_result?;
+                if target_output.success() {
+                    debug!(
+                        name = %candidate.name,
+                        "Candidate passed on target tree during multi-run determinism check; discarding"
+                    );
+                    target_consistently_fails = false;
+                    break;
+                }
+            }
+            if !target_consistently_fails {
                 continue;
             }
 

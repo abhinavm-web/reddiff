@@ -30,11 +30,36 @@ impl ProcessRunner {
         timeout: Duration,
     ) -> Result<ExecutionOutput, ReddiffError> {
         let start = Instant::now();
-        let mut child = Command::new(cmd)
+        let mut command = Command::new(cmd);
+        command
             .args(args)
             .current_dir(working_dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            // Deterministic & credential-scrubbed restricted execution environment
+            .env("PYTHONHASHSEED", "0")
+            .env("TZ", "UTC")
+            .env("HOME", working_dir)
+            .env("TMPDIR", working_dir)
+            .env("TEMP", working_dir)
+            .env("TMP", working_dir);
+
+        for secret_var in [
+            "OPENAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "REDDIFF_API_KEY",
+            "GITHUB_TOKEN",
+            "GH_TOKEN",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_SESSION_TOKEN",
+            "NPM_TOKEN",
+            "CARGO_REGISTRY_TOKEN",
+        ] {
+            command.env_remove(secret_var);
+        }
+
+        let mut child = command
             .spawn()
             .map_err(|e| ReddiffError::Runner(format!("Failed to spawn command '{cmd}': {e}")))?;
 
