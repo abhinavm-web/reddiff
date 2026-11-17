@@ -54,7 +54,19 @@ Existing AI pull-request reviewers flood diffs with speculative prose comments (
 
 ## Installation & 30-Second Showcase
 
-Download prebuilt binaries for Linux, macOS (Apple Silicon), and Windows from [GitHub Releases](https://github.com/abhinavm-web/reddiff/releases/latest), or build from source:
+Install prebuilt binaries with one command, download directly from [GitHub Releases](https://github.com/abhinavm-web/reddiff/releases/latest), or build from source:
+
+```bash
+# macOS (Apple Silicon) & Linux (x86_64)
+curl -fsSL https://raw.githubusercontent.com/abhinavm-web/reddiff/main/install.sh | sh
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/abhinavm-web/reddiff/main/install.ps1 | iex
+```
+
+Or run from source:
 
 ```bash
 git clone https://github.com/abhinavm-web/reddiff.git
